@@ -1,0 +1,227 @@
+"""
+=======================================================
+Perform Unimodal Gaussian bayes classification on
+ MNIST PCA projected and unprojected data
+=======================================================
+
+
+Principal Component Analysis (PCA) applied to this data identifies the
+combination of attributes (principal components, or directions in the
+feature space) that account for the most variance in the data. Here we
+plot the different samples on the 2 first principal components.
+
+Multimodal gaussian with spherical shape gaussian over data without pca
+creates 3 gaussians over the data and gets the likelihood
+"""
+print(__doc__)
+
+import matplotlib.pyplot as plt
+
+from sklearn import datasets
+from sklearn.decomposition import PCA
+from sklearn.lda import LDA
+import numpy as np
+from numpy import genfromtxt
+from numpy import matrix
+from numpy.linalg import inv
+from numpy.linalg import det
+import math
+
+class Classifier:
+
+		def __init__(self, training_dir, test_dir):
+			
+			data = genfromtxt(training_dir, delimiter=',')
+			labeled_test_data = genfromtxt(test_dir, delimiter=',')	
+			X = data[:, 1:]
+			y = data[:, 0] 
+			test_data = labeled_test_data[:, 1:]
+			ground_truth = labeled_test_data[:, 0]
+			
+			X_r = X
+			
+			class_means = {}
+			self.n_dimensions = 784
+			n_points = len(X_r)
+			
+			self.class_labels = {}
+
+			for p in range(0,n_points):
+				self.class_labels[y[p]] = 1
+			
+			training_set = {}
+			self.class_prior = {}
+			for c in self.class_labels:
+				class_points = []
+				size = 0.0
+				for i in range(0,n_points):
+					if y[i] == c:
+						class_points = class_points + [X_r[i,:]]
+						size += 1
+				training_set[c] = class_points
+				self.class_prior[c] = float(size / n_points)
+
+				
+
+			l = len(training_set)
+			
+			self.class_means = {}
+			self.variance1 = 0.0
+			self.variance2 = 0.0
+			self.variance3 = 0.0
+	
+			for c in self.class_labels:
+				means = []
+				training_data = training_set[c]
+				training_data = np.array(training_data)
+				
+				(means1, means2, means3) = self.train_model(training_data)
+				means = [means1, means2, means3]
+				self.class_means[c] = means
+				
+			m = 0.0
+			m = max(m,self.variance1)
+			m = max(m,self.variance2)
+			m = max(m,self.variance3)
+			self.variance = m	
+				
+			self.label = []	
+					
+			self.classify(test_data)	
+
+			self.accuracy = 0.0
+			self.evaluate(ground_truth)
+
+			print "acc= ",self.accuracy * 100, " %"
+
+#--------------------------------------------------------------------------------------------#			
+
+		def train_model(self , training_data):
+			means1 = [0.0] * self.n_dimensions
+			means2 = [0.0] * self.n_dimensions
+			means3 = [0.0] * self.n_dimensions
+
+			n_points = len(training_data)
+			n1 = n_points / 3
+			n2 = (n_points * 2)/3
+
+			for d in range(0,self.n_dimensions):
+				t = 0.0
+				for i in range(0, n1):
+					t += training_data[i][d]
+				means1[d] = float(t / n1)
+				
+				t = 0.0
+				for i in range(n1, n2):
+					t += training_data[i][d]
+				means2[d] = float(t / n1)
+				
+				t = 0.0
+				for i in range(n2, n_points):
+					t += training_data[i][d]
+				means3[d] = float(t / n1)
+
+			for d in range(0,self.n_dimensions):
+				val = 0.0
+				for i in range(0, n1):
+					val = val + (training_data[i][d] - means1[d]) * (training_data[i][d] - means1[d])
+				self.variance1 = max(self.variance1, val)
+
+				val = 0.0
+				for i in range(n1, n2):
+					val = val + (training_data[i][d] - means2[d]) * (training_data[i][d] - means2[d])
+				self.variance2 = max(self.variance2, val)
+
+				val = 0.0
+				for i in range(n2, n_points):
+					val = val + (training_data[i][d] - means3[d]) * (training_data[i][d] - means3[d])
+				self.variance3 = max(self.variance3, val)
+
+				
+			self.variance1 = self.variance1 / (n1)
+			self.variance1 = math.sqrt(self.variance1)	
+			
+			self.variance2 = self.variance2 / (n2 - n1)
+			self.variance2 = math.sqrt(self.variance2)	
+			
+			self.variance3 = self.variance3 / (n_points - n2)
+			self.variance3 = math.sqrt(self.variance3)	
+			
+			cv = np.cov(training_data.T)
+			
+			return means1,means2,means3
+					
+
+#--------------------------------------------------------------------------------------------#
+
+		def get_likelihood(self, point, mean1, mean2, mean3):
+
+			
+			delta1 = np.subtract(point, mean1)
+			delta2 = np.subtract(point, mean2)
+			delta3 = np.subtract(point, mean3)
+
+			l1 = len(delta1)
+			l2 = len(delta2)
+			l3 = len(delta3)
+
+			for i in range(0,l1):
+				delta1[i] = delta1[i] / self.variance
+			for i in range(0,l2):
+				delta2[i] = delta2[i] / self.variance
+			for i in range(0,l3):
+				delta3[i] = delta3[i] / self.variance			
+			
+			delta_T = delta1.T
+			v = delta1
+			v2 = math.pow(np.dot(v , delta_T) , 0.5)
+			e1 = math.pow(2.303,-v2)
+			likelihood1 = e1
+
+			delta_T = delta2.T
+			v = delta2
+			v2 = math.pow(np.dot(v , delta_T) , 0.5)
+			e1 = math.pow(2.303,-v2)
+			likelihood2 = e1
+
+			delta_T = delta3.T
+			v = delta3
+			v2 = math.pow(np.dot(v , delta_T) , 0.5)
+			e1 = math.pow(2.303,-v2)
+			likelihood3 = e1
+
+			m = 0.0
+			m = likelihood1 + likelihood2 + 0.5*likelihood3
+			# m = max(m, likelihood1)
+			# m = max(m, likelihood2)
+			# m = max(m, likelihood3)
+			return m	
+
+#--------------------------------------------------------------------------------------------#
+
+		def classify(self, test_data):
+			n_pts = len(test_data)
+
+			for p in range(0,n_pts):
+				max_prob = 0.0
+				prediction = 0
+				for c in self.class_labels:
+					prob = self.get_likelihood(test_data[p], self.class_means[c][0], self.class_means[c][1], self.class_means[c][2])
+					prob = prob * self.class_prior[c]
+					if prob > max_prob:
+						max_prob = prob
+						prediction = c
+				self.label = self.label + [prediction]			
+
+#--------------------------------------------------------------------------------------------#
+
+		def evaluate(self, ground_truth):
+			l = len(ground_truth)
+			hit_count = 0.0
+			for i in range(0,l):
+				if ground_truth[i] == self.label[i]:
+					hit_count += 1 				 
+			
+			self.accuracy = float(hit_count / l)		
+
+

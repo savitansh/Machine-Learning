@@ -1,0 +1,4 @@
+from NaiveBayesClassifier import *
+stopWords = ['on','the']
+t=NaiveBayes("20news-bydate-train/" , stopWords)
+t.test("20news-bydate-test/")
